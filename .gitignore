@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints
+datasets/raw_datasets/
+datasets/Toy_Datasets/toy*
+datasets/Toy_Datasets/small_toy.csv
+metrics/
+old_files/
+.vscode/
+conf/
+!conf/config.yaml
+*.sbatch
+test.py
+iterative_tests.ipynb
