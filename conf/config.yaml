@@ -26,6 +26,6 @@ hydra:
     params:
       batch_size: 1, 10, 20, 40, 80, 160
       dataset: aryl_scope, deoxy, borylation, buchwald_hartwig
-      learner_type: -1, 0, 6, 7
+      learner_type: -1, 0, 6, 7, 8, 9
       model_type: RF
       

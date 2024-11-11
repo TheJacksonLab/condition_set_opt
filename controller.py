@@ -75,9 +75,9 @@ class Controller:
         elif learner_type == RAND:
             self.learner = ALClassifierRandomSelection(self.chemical_space.shape, num_cpus, model_type=self.model_type)
         elif learner_type == EXPEXP:
-            self.learner = ALClassifier(self.chemical_space.shape, self.chemical_space.all_conditions, self.max_set_size, cpus=num_cpus, stochastic_cond_num=self.stochastic_cond_num, model_type=self.model_type)
+            self.learner = ALClassifier(self.chemical_space.shape, self.chemical_space.all_conditions, self.max_set_size, cpus=num_cpus, model_type=self.model_type)
         elif learner_type == EXPLOIT:
-            self.learner = ALClassifier(self.chemical_space.shape, self.chemical_space.all_conditions, self.max_set_size, alpha_init_fun=(lambda x: np.zeros(x)), cpus=num_cpus, stochastic_cond_num=self.stochastic_cond_num, model_type=self.model_type)
+            self.learner = ALClassifier(self.chemical_space.shape, self.chemical_space.all_conditions, self.max_set_size, alpha_init_fun=(lambda x: np.zeros(x)), cpus=num_cpus, model_type=self.model_type)
         elif learner_type == FLIPPED:
             self.learner = ALClassifier(self.chemical_space.shape, self.chemical_space.all_conditions, self.max_set_size, alpha_init_fun=(lambda x: np.linspace(1, 0, x)), cpus=num_cpus, model_type=self.model_type)
         elif learner_type == 4:
