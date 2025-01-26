@@ -3,13 +3,14 @@ __pycache__/
 *.py[cod]
 *.ipynb_checkpoints
 datasets/raw_datasets/
-datasets/Toy_Datasets/toy*
-datasets/Toy_Datasets/small_toy.csv
+datasets/Toy_Datasets/
 metrics/
-old_files/
+multirun/
 .vscode/
 conf/
 !conf/config.yaml
 *.sbatch
+*.png
 test.py
 iterative_tests.ipynb
+!TOC_image.png

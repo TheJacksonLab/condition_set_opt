@@ -66,6 +66,7 @@ class Classifier(Learner):
         uncertainty.extend(self.model.predict_proba(X))
         print(f"Time to predict: {time.time() - start}")
         # Predicted surface is a matrix of the predicted probability of the positive class (above .5 is predicted to be true)
+        # self.featurized must be in the correct order, and it'll all be fine
         self.predicted_surface = SpaceMatrix(np.array([uncertainty[i][1] for i in range(len(uncertainty))]).reshape(self.shape, order='C'))
         return np.array(uncertainty)
 

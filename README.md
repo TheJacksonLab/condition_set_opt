@@ -18,7 +18,7 @@ Different acquisition functions tested can be found in [learners](./learners) an
 clone this repo, then install the pip requirements. This project was created with python 3.12
 
 ```sh
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -28,6 +28,11 @@ The following code runs n_repeats optimization runs on the Pd-Aryl dataset, usin
 ```python
 from chemical_space import ChemicalSpace
 from controller import Controller, EXPT_FAST_SUM, RF
+
+# number of experiments suggested and run before the model is re-trained
+batch_size = 20
+# number of full optimization runs to be conducted
+n_repeats = 50
 
 aryl_scope = ChemicalSpace(['ligand_name'], ['electrophile_id', 'nucleophile_id'], 'datasets/real_datasets/aryl-scope-ligand.csv')
 optimizer = Controller(aryl_scope, 21.66, batch_size=batch_size, max_experiments=1000, max_set_size=3, learner_type=EXPT_FAST_SUM, model_type=RF)

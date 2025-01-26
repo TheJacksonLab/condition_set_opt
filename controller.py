@@ -10,7 +10,7 @@ from space_mat import THRESHOLDED_COUNT, WEIGHTED_COUNT
 from learners.al_classifier import ALClassifierBasic
 from learners.random_selection import ALClassifierRandomSelection
 from learners.al_classifier_exploit import ALClassifierFast
-from tools.functions import convert_to_onehot, convert_point_to_idx
+from tools.featurize import convert_to_onehot, convert_point_to_idx
 from learners.al_classifier_modified import ALClassifier
 from learners.al_classifier_exploit_2 import ALClassifierFast2
 from learners.al_classifier_exploit_sum import ALClassifierFastSum
@@ -18,17 +18,24 @@ import time
 from joblib import Parallel, delayed
 
 # Learners
-# Random Selection of Next Points
+# Random Selection of next points
 RAND = -1
-# Active Learning Classifier
+# next points selected based on uncertainty
 EXPLORE = 0
-# Active Learning Classifier with Tuned Aquistion Function
+# Tuned Aquistion Functions
+# Combined**
 EXPEXP = 1
+# Exploit**
 EXPLOIT = 2
+# Combined** with flipped alpha, so...
 FLIPPED = 3
+# Combined*
 EXPEXP_FAST = 6
+# Exploit*
 EXPT_FAST = 7
+# Combined
 EXPEXP_FAST_SUM = 8
+# Exploit
 EXPT_FAST_SUM = 9
 
 # model types
@@ -36,8 +43,30 @@ GP = 'GP'
 RF = 'RF'
 
 # handles featurization, chosing optimal sets and communication between the active learning algorithm and the chemical space
-class Controller:
-    def __init__(self, chemical_space:ChemicalSpace, yield_cutoff:float=None, batch_size:int=10, max_experiments:int=1000, max_set_size:int=3, learner_type:int=EXPEXP, early_stopping=True, output_dir='.', num_cpus=None, stochastic_cond_num=None, model_type=GP, load_from_pickle_config_filepath=None, load_from_pickle_metrics_filepath=None):
+class Controller: 
+    def __init__(self, 
+                 chemical_space:ChemicalSpace, 
+                 yield_cutoff:float, batch_size:int=10, max_experiments:int=1000, 
+                 max_set_size:int=3, learner_type:int=EXPEXP, early_stopping=True, 
+                 output_dir='.', num_cpus=None, stochastic_cond_num=None, model_type=RF,
+                 load_from_pickle_config_filepath=None, load_from_pickle_metrics_filepath=None):
+        '''
+        initializes the controller
+        @params:
+        chemical_space: ChemicalSpace, the chemical space to optimize
+        yield_cutoff: float, the yield cutoff to use for the optimization
+        batch_size: int, the number of points to suggest at each iteration
+        max_experiments: int, the maximum number of experiments to run
+        max_set_size: int, the maximum size of the set to optimize
+        learner_type: int, the type of active learning model to use
+        early_stopping: bool, whether to stop the optimization early
+        output_dir: str, the directory to save the output files to
+        num_cpus: int, the number of cpus to use in parallelization
+        stochastic_cond_num: int, the number of conditions to use for the stochastic condition number
+        model_type: str, the type of model to use for the active learning
+        load_from_pickle_config_filepath: str, the path to the pickle file containing the configuration of the optimizer
+        load_from_pickle_metrics_filepath: str, the path to the pickle file containing the metrics of the optimizer
+        '''
         self.chemical_space = chemical_space
         self.num_cpus = num_cpus
         self.output_dir = output_dir
@@ -57,8 +86,10 @@ class Controller:
             self.config = {'max_experiments': self.max_experiments, 'batch_size': self.batch_size, 'cutoff': self.cutoff, 'learner_type': learner_type, 'date': self.date_str, 'max_set_size': self.max_set_size, 'early_stopping': early_stopping, 'stochastic_cond_num': stochastic_cond_num, "model_type": model_type}
             self.model_type = model_type
             self.metrics = {}
-            if chemical_space.descriptors == None:
-                self.all_points_featurized = self.all_points_featurized = Parallel(n_jobs=num_cpus)(delayed(convert_to_onehot)(self.chemical_space.shape, point) for point in self.chemical_space.all_points)
+            # if chemical_space.descriptors == None:
+            #     self.all_points_featurized = Parallel(n_jobs=num_cpus)(delayed(convert_to_onehot)(self.chemical_space.shape, point) for point in self.chemical_space.all_points)
+            # elif use_fingerprints:
+            #     self.all_points_featurized = Parallel(n_jobs=num_cpus)(delayed(chemical_space.convert_to_fingerprint)(point) for point in self.chemical_space.all_points)
             self.cond_to_rank_map = chemical_space.yield_surface.rank_conditions(chemical_space.all_conditions, max_set_size, yield_cutoff)
             self.init_learner(learner_type)
     
@@ -125,8 +156,10 @@ class Controller:
         except KeyError:
             self.model_type = GP
         self.num_cpus = 1
-        if self.chemical_space.descriptors == None:
-            self.all_points_featurized = [convert_to_onehot(self.chemical_space.shape, point) for point in self.chemical_space.all_points]
+        # if self.chemical_space.descriptors == None and not self.fingerprint_reactants:
+        #     self.all_points_featurized = [convert_to_onehot(self.chemical_space.shape, point) for point in self.chemical_space.all_points]
+        # elif self.use_fingerprints:
+        #     self.all_points_featurized = [convert_to_fingerprint(self.chemical_space.shape, point) for point in self.chemical_space.all_points]
         self.cond_to_rank_map = self.chemical_space.yield_surface.rank_conditions(self.chemical_space.all_conditions, self.max_set_size, self.cutoff)
         self.init_learner(self.config['learner_type'])
     
@@ -138,7 +171,7 @@ class Controller:
             self.metrics = pickle.load(f)
         self.optimization_runs = max(self.metrics.keys()) + 1
     
-    def get_initial_seed(self, sampling_method:str = 'file') -> list:
+    def get_initial_seed(self, sampling_method:str = 'LHS') -> list:
         '''
         returns a list of n points to be used as the initial seed for the optimization, with at least one successful and one unsuccessful reaction
         @params:
@@ -185,7 +218,7 @@ class Controller:
 
         num_experiments_run:int = 0
 
-        seed = self.get_initial_seed()
+        seed = self.get_initial_seed("LHS")
 
         metrics = {'accuracy': [], 'precision': [], 'recall': [], 
                    'best_sets': [], 'coverages': [], 
@@ -212,11 +245,12 @@ class Controller:
             # measure yields for next points
             measurement = np.array([self.chemical_space.measure_reaction_yield(next_points[i]) >= self.cutoff for i in range(len(next_points))])
 
+            
             if (x is None) and (y is None):
-                x = [convert_to_onehot(self.chemical_space.shape, point) for point in next_points]
+                x = [self.chemical_space.all_points_featurized[convert_point_to_idx(self.chemical_space.shape, point)] for point in next_points]
                 y = measurement
             else:
-                x = np.append(x, [self.all_points_featurized[i] for i in next_point_idxs], axis=0)
+                x = np.append(x, [self.chemical_space.all_points_featurized[i] for i in next_point_idxs], axis=0)
                 y =  np.append(y, measurement, axis=0)
 
             num_experiments_run += len(measurement)
@@ -226,7 +260,7 @@ class Controller:
             last_measured_time = time.time()
 
             # select next points to test
-            all_points_uncertainty, predicted_surface, next_point_idxs, certainties = self.learner.suggest_next_n_points(np.array(self.all_points_featurized), self.batch_size, known_idxs)
+            all_points_uncertainty, predicted_surface, next_point_idxs, certainties = self.learner.suggest_next_n_points(np.array(self.chemical_space.all_points_featurized), self.batch_size, known_idxs)
             known_idxs.update(next_point_idxs)
             next_points = [self.chemical_space.all_points[i] for i in next_point_idxs]
             print(f"suggest next points: {time.time() - last_measured_time} seconds")

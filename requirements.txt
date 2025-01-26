@@ -20,8 +20,8 @@ kiwisolver==1.4.5
 matplotlib==3.8.4
 matplotlib-inline==0.1.7
 nest-asyncio==1.6.0
-numexpr @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/numexpr_1699237935415/work
-numpy @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_a51i_mbs7m/croot/numpy_and_numpy_base_1708638620867/work/dist/numpy-1.26.4-cp312-cp312-macosx_11_0_arm64.whl#sha256=37afb6b734a197702d848df93bd67c10b52f6467d56e518950d84b6b1c949d27
+numexpr==2.8.7
+numpy==1.26.4
 omegaconf==2.3.0
 packaging==24.0
 pandas==2.2.2
@@ -33,20 +33,21 @@ prompt-toolkit==3.0.43
 psutil==5.9.8
 ptyprocess==0.7.0
 pure-eval==0.2.2
-py-cpuinfo @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/py-cpuinfo_1699242825254/work
+py-cpuinfo==9.0.0
 Pygments==2.18.0
 pyparsing==3.1.2
 python-dateutil==2.9.0.post0
 pytz==2024.1
 PyYAML==6.0.1
 pyzmq==26.0.3
+rdkit==2024.3.6
 scikit-learn==1.4.2
 scipy==1.13.0
 seaborn==0.13.2
 setuptools==69.5.1
 six==1.16.0
 stack-data==0.6.3
-tables @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_b2h37objh4/croot/pytables_1705614846524/work
+tables==3.9.2
 threadpoolctl==3.5.0
 tornado==6.4
 traitlets==5.14.3
