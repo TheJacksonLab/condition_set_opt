@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-The following code runs n_repeats optimization runs on the Pd-Aryl dataset, using the summation exploit* function and saves the results in a subdirectory of metrics/aryl_scope.
+The following code runs n_repeats optimization runs on the Pd-Aryl dataset, using the Exploit function and saves the results in a subdirectory of metrics/aryl_scope.
 
 ```python
 from chemical_space import ChemicalSpace
