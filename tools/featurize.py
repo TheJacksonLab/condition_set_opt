@@ -3,7 +3,10 @@ import numpy as np
 def convert_to_onehot(shape: tuple, point:list)-> list:
     '''
     @params
+    shape: tuple of the shape of the condition and reactant space
     point: in order of condition, reactant
+    @returns
+    onehot: onehot encoding of the point
     '''
     onehot = np.zeros(np.sum(shape))
     for i, p in enumerate(point):
@@ -12,8 +15,11 @@ def convert_to_onehot(shape: tuple, point:list)-> list:
 
 def convert_from_onehot(shape: tuple, onehot: int)-> list:
     '''
-    returns
-    point: in order of condition, reactant
+    @params
+    shape: tuple of the shape of the condition and reactant space
+    onehot: onehot encoding of the point in the same order as the shape
+    @returns
+    point: in the same order as shape
     '''
     point = []
     num = 0
@@ -30,7 +36,10 @@ def convert_from_onehot(shape: tuple, onehot: int)-> list:
 def convert_point_to_idx(shape:tuple, point:list)-> int:
     '''
     @params
-    point: in order of condition, reactant
+    shape: tuple of the shape of the condition and reactant space
+    point: in the same order as shape
+    @returns
+    idx: index of the point in the flattened space
     '''
     idx = 0
     for i, n in enumerate(point):
@@ -41,8 +50,11 @@ def convert_point_to_idx(shape:tuple, point:list)-> int:
 
 def convert_idx_to_point(shape:tuple, idx:int)-> list:
     '''
-    returns:
-    point: in order of condition, reactant
+    @params:
+    shape: tuple of the shape of the condition and reactant space
+    idx: index of the point in the flattened space
+    @returns:
+    point: in the same order as shape
     '''
     point = [0]*len(shape)
     for i in range(len(shape)-1, -1, -1):

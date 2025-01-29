@@ -1,15 +1,30 @@
-import time
 import numpy as np
 from learners.learner import Classifier
 
 class ALClassifierBasic(Classifier):
-    '''Active learning classifier that suggests the top n points with the highest uncertainty that haven't been measured yet to be measured next'''
-    def __init__(self, space_shape:tuple, cutoff_certainty=.9, cpus=None, model_type='GP'):
+    '''Active learning classifier that suggests the top n points with the highest uncertainty that haven't been measured yet'''
+    def __init__(self, space_shape:tuple, cutoff_certainty:float=.9, cpus:int|None=None, model_type='RF'):
+        '''@params:
+            space_shape: shape of the chemical space being learned
+            cutoff_certainty: minimum average certainty of top points for the model to stop learning
+            cpus: number of cpus the model can use for training and prediction
+            model_type: type of model to use for the classifier 
+                    (Gaussian Process (GP) and Random Forest (RF) are currently supported)
+        '''
         super().__init__(space_shape, model_type, cpus)
         self.certainty_cutoff = (cutoff_certainty - .5)/.5
 
-    def suggest_next_n_points(self, X:np.ndarray, n:int, measured_indices:set)->list:
-        '''next_points is a list of indices of the next points to be measured'''
+    def suggest_next_n_points(self, X:np.ndarray, n:int, measured_indices:set)->tuple:
+        '''suggests the next n points to be measured based on the points with the highest uncertainty
+            @params:
+            X: np.ndarray of shape (n_reactions, n_features) of all featurized points in the chemical space
+            n: number of points to suggest
+            measured_indices: set of indices of points to exclude from suggestion
+            @returns:
+            uncertainty: np.ndarray of predicted uncertainty for each point
+            predicted_surface: np.ndarray of shape (n_reactions,) of predicted values for each point
+            next_points: list of indices of the next points to be measured
+            point_uncertainties: list of uncertainties for each point in next_points'''
         uncertainty = self.predict(X)
 
         assert len(uncertainty) != 0, 'Failed to predict uncertainty'

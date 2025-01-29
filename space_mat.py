@@ -5,9 +5,13 @@ from joblib import Parallel, delayed
 # scoring functions for condition set coverage of a chemical space
 # more complex scoring functions can be added
 # the last argument (x) is an np.ndarray of the maximum yield surface of the conditions
+# accepts a surface of yields to compute coverage, where a is the minimum yield to count as a successful reaction
 THRESHOLDED_COUNT = lambda s: lambda a: lambda x: (np.sum(x >= a))/s
+# takes a surface of 0 and 1 to compute coverage
 BINARY_COUNT = lambda s: lambda x: np.sum(x)/s
 
+# accepts a surface of yields to score a condition, where a is the minimum yield to count as a successful reaction
+# scored by the number of points above the threshold + the average yield of all points above the threshold
 WEIGHTED_COUNT = lambda a: lambda x: np.sum(x >= a) + np.average(x[x >= a])
 class SpaceMatrix:
     def __init__(self, matrix:np.ndarray) -> None:
@@ -64,7 +68,7 @@ class SpaceMatrix:
         '''
         @params:
         condition_set: tuple of tuples of integers that represents a set of conditions in the chemical space
-        yield_threshold: float, the minimum yield to count as a successful condition
+        yield_threshold: float, the minimum yield to count as a successful reaction
 
         returns:
         int, the number of reactant combinations that meet the yield threshold for the given set of conditions
@@ -109,6 +113,13 @@ class SpaceMatrix:
 
     def get_best_set(self, condition_options:list, scoring_function, max_set_size:int=1, check_subsets=True, num_cpus = 1):
         '''
+        @params:
+        condition_options: list of tuples of integers, representing all possible or a subset of conditions in the chemical space
+        scoring_function: function np.ndarray->float, a function that takes in the maximum yield surface of the conditions and returns a score
+        max_set_size: int, the maximum number of conditions to include in a set
+        check_subsets: bool, whether to check for sets smaller than the max_set_size
+        num_cpus: int, the number of cpus to use for parallel processing
+        
         returns the best set of conditions based on the scoring function
         '''
         sets = self.get_all_set_coverages(condition_options, scoring_function, max_set_size, check_subsets=check_subsets, num_cpus=num_cpus)
@@ -121,10 +132,11 @@ class SpaceMatrix:
         scoring_function: function np.ndarray->float, a function that takes in the maximum yield surface of the conditions and returns a score
         max_set_size: int, the maximum number of conditions to include in a set
         num_sets: int, the number of sets to return
-        check_subsets: bool, whether to check for sets smaller than the max_set_size
+        check_subsets: bool, whether to compute coverages of sets smaller than the max_set_size
         ignore_reduntant_sets: bool, whether to ignore sets that contain a subset with the same coverage
+        num_cpus: int, the number of cpus to use for parallel processing
 
-        returns: list of condition tuples, list of floats, the best condition sets and their corresponding scores in descending order of coverage
+        @returns: list of condition tuples, list of floats, the best condition sets and their corresponding scores in descending order of coverage
         ignores sets that contain a subset with the same coverage
         '''
         sets = self.get_all_set_coverages(condition_options, scoring_function, max_set_size, check_subsets, num_cpus)
@@ -159,6 +171,12 @@ class SpaceMatrix:
     def condition_overlap(self, condition_set:tuple, yield_threshold:float) -> float:
         '''
         counts the number of reactant combinations that are covered by more than one condition in the set
+        @params:
+        condition_set: tuple of tuples of integers that represents a set of conditions in the chemical space
+        yield_threshold: float, the minimum yield to count as a successful reaction
+
+        @returns:
+        int, the number of reactant combinations that are covered by more than one condition in the set
         '''
         yield_coverage_surface = np.zeros(self.shape[len(condition_set[0]):])
         for cond in condition_set:
@@ -171,8 +189,10 @@ class SpaceMatrix:
         '''
         @params:
         condition_options: list of tuples of integers, representing all possible or a subset of conditions in the chemical space
+        max_set_size: int, the maximum number of conditions to include in a set
+        cutoff: float, the minimum yield to count as a successful reaction
         
-        returns:
+        @returns:
         list of conditions and list of coverages
         list of conditions is a list of tuples, the conditions in descending order of coverage
         '''

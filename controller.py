@@ -6,11 +6,11 @@ import datetime as dt
 from scipy.stats import qmc
 from chemical_space import ChemicalSpace
 from space_mat import SpaceMatrix
-from space_mat import THRESHOLDED_COUNT, WEIGHTED_COUNT
+from space_mat import THRESHOLDED_COUNT
 from learners.al_classifier import ALClassifierBasic
 from learners.random_selection import ALClassifierRandomSelection
 from learners.al_classifier_exploit import ALClassifierFast
-from tools.featurize import convert_to_onehot, convert_point_to_idx
+from tools.featurize import convert_point_to_idx
 from learners.al_classifier_modified import ALClassifier
 from learners.al_classifier_exploit_2 import ALClassifierFast2
 from learners.al_classifier_exploit_sum import ALClassifierFastSum
@@ -38,34 +38,53 @@ EXPEXP_FAST_SUM = 8
 # Exploit
 EXPT_FAST_SUM = 9
 
-# model types
+# supported classifier model types
 GP = 'GP'
 RF = 'RF'
 
-# handles featurization, chosing optimal sets and communication between the active learning algorithm and the chemical space
+# handles optimization runs and calls the active learning algorithm and on the chemical space
 class Controller: 
     def __init__(self, 
                  chemical_space:ChemicalSpace, 
                  yield_cutoff:float, batch_size:int=10, max_experiments:int=1000, 
-                 max_set_size:int=3, learner_type:int=EXPEXP, early_stopping=True, 
-                 output_dir='.', num_cpus=None, stochastic_cond_num=None, model_type=RF,
-                 load_from_pickle_config_filepath=None, load_from_pickle_metrics_filepath=None):
+                 max_set_size:int=3, learner_type:int=EXPEXP_FAST_SUM, early_stopping:bool=True, 
+                 output_dir:str='.', num_cpus:int|None=None, stochastic_cond_num:int|None=None, model_type=RF,
+                 load_from_pickle_config_filepath:str|None=None, load_from_pickle_metrics_filepath:str|None=None):
         '''
         initializes the controller
         @params:
         chemical_space: ChemicalSpace, the chemical space to optimize
-        yield_cutoff: float, the yield cutoff to use for the optimization
+        yield_cutoff: float, the minimum yield to consider a reaction successful
         batch_size: int, the number of points to suggest at each iteration
-        max_experiments: int, the maximum number of experiments to run
-        max_set_size: int, the maximum size of the set to optimize
-        learner_type: int, the type of active learning model to use
+        max_experiments: int, the maximum number of experiments to run in a given optimization run
+        max_set_size: int, the maximum size of a set of conditions
+        learner_type: int, the type of active learning model to use (Random Selection = -1, Explore = 0, Combined = 8, Exploit = 9)
         early_stopping: bool, whether to stop the optimization early
-        output_dir: str, the directory to save the output files to
-        num_cpus: int, the number of cpus to use in parallelization
-        stochastic_cond_num: int, the number of conditions to use for the stochastic condition number
-        model_type: str, the type of model to use for the active learning
+        output_dir: str, the directory to save the output metric and config files
+        num_cpus: int, the number of cpus to use in model training and parallelization
+        stochastic_cond_num: int, number of conditions to randomly select when computing the exploit value each iteration (for acquisition functions that support it)
+        model_type: str, the type of model to use for the active learning (GP or RF are currently supported)
         load_from_pickle_config_filepath: str, the path to the pickle file containing the configuration of the optimizer
         load_from_pickle_metrics_filepath: str, the path to the pickle file containing the metrics of the optimizer
+
+        @attributes:
+        chemical_space: ChemicalSpace, the chemical space to optimize
+        num_cpus: int, the number of cpus to use in model training and parallelization
+        output_dir: str, the directory to save the output metric and config files
+        cutoff: float, the minimum yield to consider a reaction successful
+        batch_size: int, the number of points to suggest at each iteration
+        max_experiments: int, the maximum number of experiments to run in a given optimization run
+        date_str: str, the date and time the controller was created (to the millisecond)
+        optimization_runs: int, the number of optimization runs that have been completed
+        max_set_size: int, the maximum size of a set of conditions
+        early_stopping: bool, whether to stop the optimization early
+        stochastic_cond_num: int, number of conditions to randomly select when computing the exploit value each iteration
+        model_type: str, the type of model to use for the active learning (GP or RF are currently supported)
+        config: dict, the configuration of the optimizer
+        metrics: dict, the metrics of all the optimization runs
+        cond_to_rank_map: dict, maps the conditions to their rank among all condition sets based on coverage
+        scoring_function: function, the scoring function to use for computing coverage
+        learner: ALClassifier, the active learning model to use in the optimization
         '''
         self.chemical_space = chemical_space
         self.num_cpus = num_cpus
@@ -93,7 +112,7 @@ class Controller:
             self.cond_to_rank_map = chemical_space.yield_surface.rank_conditions(chemical_space.all_conditions, max_set_size, yield_cutoff)
             self.init_learner(learner_type)
     
-    def init_learner(self, learner_type, num_cpus=None)->None:
+    def init_learner(self, learner_type:int, num_cpus=None)->None:
         '''
         initializes the active learning model to use in the optimization
         @params:
@@ -176,7 +195,7 @@ class Controller:
         returns a list of n points to be used as the initial seed for the optimization, with at least one successful and one unsuccessful reaction
         @params:
         n: int, the number of points to return, for LHS n must be a perfect square of a prime number
-        sampling_method: str, the method to use to sample the initial seed, either \"LHS\" or \"file\", which uses pre-set seeds for the fiven optimization run
+        sampling_method: str, the method to use to sample the initial seed, either Latin Hyper Cube Sampling (\"LHS\") or \"file\", which uses pre-set seeds for the fiven optimization run
         '''
         if sampling_method == 'file':
             with open(f'datasets/seeds/{self.chemical_space.dataset_name}_initial_seed.pkl', 'rb') as f:
@@ -212,6 +231,15 @@ class Controller:
         return seed
     
     def optimize(self, save_to_file=False)->tuple:
+        '''
+        optimizes the chemical space using the active learning algorithm up to max_experiments number of measurements
+        @params:
+        save_to_file: bool, whether to save the metrics to a pickle file at metrics/{self.chemical_space.dataset_name}/{self.date_str}/metrics_{self.date_str}.pkl
+        
+        @returns:
+        best_set: list, the predicted best set of conditions found during the optimization
+        coverage: float, the predicted coverage of the best set of conditions found during the optimization
+        '''
         start_time = time.time()
         self.learner.reset()
         self.learner.initialize_model()
@@ -303,7 +331,7 @@ class Controller:
         if save_to_file:
             self.save_metrics_to_pkl()
             self.plot_metrics(self.optimization_runs)
-            self.plot_set_preds(self.optimization_runs)
+            # self.plot_set_preds(self.optimization_runs)
             print(num_experiments_run)
         
         self.optimization_runs += 1
@@ -311,6 +339,11 @@ class Controller:
         return best_set, coverage
     
     def do_repeats(self, n_repeats:int):
+        '''
+        runs the optimization n_repeats times, saving the metrics to a pickle file after each run
+        metrics are saved to metrics/{self.chemical_space.dataset_name}/{self.date_str}/metrics_{self.date_str}.pkl
+        @params:
+        n_repeats: int, the number of optimations to run'''
         for i in range(n_repeats):
             print(f"starting {i}")
             self.optimize()
@@ -319,6 +352,7 @@ class Controller:
             self.metrics.clear()
     
     def save_metrics_to_pkl(self)->None:
+        '''saves the optimization metrics and config to a pickle file'''
         os.makedirs(f'{self.output_dir}/metrics/{self.chemical_space.dataset_name}/{self.date_str}', exist_ok = True) 
         with open(f"{self.output_dir}/metrics/{self.chemical_space.dataset_name}/{self.date_str}/config_{self.date_str}.pkl", "wb+") as f:
             pickle.dump(self.config, f) 
@@ -334,6 +368,8 @@ class Controller:
     def plot_metrics(self, repeat_no:int)->None:
         '''
         plots the performance of the model (accuracy, precision, recall) over the course of a single optimization run
+        @params:
+        repeat_no: int, the optimization run number to plot
         '''
         metrics = self.metrics[repeat_no]
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15,5))

@@ -7,28 +7,31 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score
 from space_mat import SpaceMatrix
 from space_mat import THRESHOLDED_COUNT
 from matplotlib.colors import ListedColormap
-from tools.featurize import convert_to_onehot
 import rdkit.Chem as Chem
 
 class ChemicalSpace:
-    def __init__(self, condition_titles:list, reactant_titles:list, data_file:str, target_title='yield', condition_parameter_subspace={}, titles_to_fingerprint=[]) -> None:
+    def __init__(self, condition_titles:list, reactant_titles:list, data_file:str, target_title:str='yield', condition_parameter_subspace:dict={}, titles_to_fingerprint=[]) -> None:
         '''
         @params:
         condition_titles: list of strings, the headers of the condition components in the data file ex. ['ligand', 'solvent', 'temperature']
         reactant_titles: list of strings, the headers of the reactants in the data file ex. ['electrophile', 'nucleophile']
         data_file: string, the path to the csv file that contains the data
         target_title: string, the header of the target column in the data file (default is 'yield')
-        fingerprint_file: string, the path to the csv file that contains the fingerprint data 
+        condition_parameter_subspace: optional dict, the allowed values for condition parameters which restricts the chemical space to those values (if None, all values are allowed)
+        titles_to_fingerprint: list of strings, the titles (within reactant titles) of the reactants to be converted to fingerprints, they should be SMILES
 
-        attributes:
+        @attributes:
+        dataset_name: string, the name of the dataset, defaulted as the data_file name
         reactants_dim: int, the number of reactants used in a given reation
-        conditions_dim: int, the number of condition components used to define a condition for a given reaction 
-        titles: list of strings, the titles of the dimensions of chemical space, in the order of condition_titles followed by reactant_titles
-        labels: list of lists of strings, the unique values for each of the condition components and reactants, in the order of the titles
+        conditions_dim: int, the number of condition components for a given reaction 
+        titles: list of strings, the title of each dimension of chemical space, in the order of condition_titles followed by reactant_titles
+        labels: list of lists of strings, the unique values for each of the condition components and reactants, in the same order as titles
         yield_surface: SpaceMatrix, the matrix of the chemical space indexed in the order of titles (first condition components followed by reactants)
         shape: tuple, the shape of the yield_surface matrix, conditions then reactants
-        all_points: list of tuples, all possible points in the chemical space, a point is a single condition and set of reactants
+        features: list of np.ndarrays, the corresponding feactures of each dimension in the chemical space, in the same order as labels
+        all_points: list of tuples, all possible points/reactions in the chemical space, a is reaction defined by a single condition and set of reactants
         all_conditions: list of tuples, all possible conditions in the chemical space
+        all_points_featurized: list of np.ndarrays, the featurized version of all_points
         '''
         self.reactants_dim = len(reactant_titles)
         self.conditions_dim = len(condition_titles)
@@ -47,7 +50,8 @@ class ChemicalSpace:
         self._y_true = np.array([self.yield_surface[point] for point in self.all_points])
         self.all_conditions = list(itertools.product(*[range(s) for s in self.shape[:self.conditions_dim]]))
 
-    def _create_mat(self, data_file, cond_titles:list, reactant_titles:list,  target_title, condition_params_default)->np.ndarray:
+    def _create_mat(self, data_file:str, cond_titles:list, reactant_titles:list,  target_title:str, condition_params_default:dict)->np.ndarray:
+        '''Creates a matrix of the data from the csv file and titles'''
         # Create a matrix of the data
         data = pd.read_csv(data_file)
         unique_rs = [data[r_title].unique() for r_title in reactant_titles]
@@ -67,8 +71,12 @@ class ChemicalSpace:
             data_mat[tuple(point)] = max(min(series[target_title], 100), 0)
         return data_mat
     
-    def create_feature_vector(self, point):
-        '''Converts a point in the chemical space with the associated fingerprint features, and the rest OHE'''
+    def create_feature_vector(self, point:tuple)->list:
+        '''Converts a point in the chemical space to the featurized representation with the associated fingerprint and OHE features
+        @params:
+        point: tuple of integers, the indecies of the condition components and reactants (in the order of titles)
+        @returns:
+        list of floats or ints, the featurized representation of the point'''
         result = []
         for i in range(len(point)):
             result.extend(self.features[i][point[i]])
@@ -79,17 +87,16 @@ class ChemicalSpace:
         @params:
         point: list of integers, the indecies of the condition components and reactants (in the order of titles)
         
-        returns:
+        @returns:
         float, the yield of the reaction at the given point
         '''
         return self.yield_surface[tuple(point)]
     
-    # TODO: extend to subset of points
-    def score_classifier_prediction(self, y_pred, cutoff) -> tuple:
+    def score_classifier_prediction(self, y_pred:np.ndarray, cutoff:float) -> tuple:
         '''
         @params:
         y_pred: np.ndarray, the predicted values of the classifier, in the order of all_points
-        cutoff: float, the yield threshold (not inclusive) for the classifier to determine a positive result
+        cutoff: float, the yield threshold (inclusive) for the classifier to determine a positive result
         
         returns:
         tuple of floats, the accuracy, precision, and recall of the classifier prediction
@@ -105,7 +112,7 @@ class ChemicalSpace:
         max_set_size: int, the maximum number of conditions to include in a set
         num_sets: int, the number of sets to return
         
-        returns:
+        @returns:
         np.ndarray(type=('condition set', 'coverage')), the best condition sets and their corresponding scores
         '''
         return self.yield_surface.best_condition_sets(self.all_conditions, THRESHOLDED_COUNT(np.prod(self.shape[self.conditions_dim:]))(yield_threshold), max_set_size, num_sets)
@@ -120,9 +127,17 @@ class ChemicalSpace:
         return ', '.join([f'{self.labels[i][c]}' for i, c in enumerate(condition)])
     
     def max_possible_coverage(self, cutoff:float)->int:
+        '''Computes the maximum possible coverage of the chemical space given a yield threshold
+        @params:
+        cutoff: float, the yield threshold to count as a successful reaction
+        @returns:
+        int, the maximum possible coverage of the chemical space if all condititions are used'''
         return self.yield_surface.count_coverage(self.all_conditions, cutoff)
 
     def get_yield_coverage(self)->tuple:
+        '''Computes the coverage of the max chemical space for each yield threshold
+        @returns:
+        tuple of np.ndarrays, the minimum yields (inclusive) that lead to the corresponding coverages'''
         max_yield_surface = np.amax(self.yield_surface.mat.T, axis=tuple(range(self.reactants_dim, len(self.shape))))
         yields = np.sort(max_yield_surface.flatten())[::-1]
         coverages = range(1, len(yields) + 1)/(np.prod(self.shape[self.conditions_dim:]))
@@ -132,11 +147,17 @@ class ChemicalSpace:
         return yields, coverages
     
     def get_yield_success(self)->tuple:
+        '''Computes the fraction of successful reactions in the entire chemical space for each yield threshold
+        @returns:
+        tuple of np.ndarrays, the minimum yields (inclusive) that lead to the corresponding fraction of successful reactions'''
         all_yields = np.sort(self.yield_surface.mat.flatten())[::-1]
         successful_reactions = range(1, len(all_yields) + 1)/(np.prod(self.shape))
         return all_yields, successful_reactions
     
     def get_individual_conditions_coverage(self)->tuple:
+        '''Computes the coverage of the max individual condition coverage for each yield threshold
+        @returns:
+        tuple of np.ndarrays, the minimum yields (inclusive) that lead to the corresponding individual condition coverages'''
         cond_surfaces = [np.sort(self.yield_surface.get_condition_surface(cond).flatten())[::-1] for cond in self.all_conditions]
         cond_cov_max_yields = np.amax(cond_surfaces, axis=0)
         coverage = range(1, len(cond_cov_max_yields) + 1)/(np.prod(self.shape[self.conditions_dim:]))
@@ -145,12 +166,12 @@ class ChemicalSpace:
                 coverage[-i] = coverage[1-i]
         return cond_cov_max_yields, coverage
 
-    def plot_conditions(self, file_name, conditions:tuple, yield_threshold=0) -> None:
+    def plot_conditions(self, file_name:str, conditions:tuple, yield_threshold:float=0) -> None:
         '''
         @params:
         file_name: string, the file path location where the plot will be saved
         conditions: tuple of condition tuples
-        yield_threshold: float, the minimum yield to count as a successful condition, all reactions below this threshold will be set to 0
+        yield_threshold: float, the minimum yield to count as a successful reaction, all reactions below this threshold will be set to 0
 
         requires that the chemical space has exactly 2 reactants
 
@@ -178,7 +199,6 @@ class ChemicalSpace:
     def plot_max_surface(self, zlabel = '% Yield', title='Highest Yield Across All Conditions') -> None:    
         '''
         @params:
-        dataset_name: string, the prefix of the file where the plot will be saved
         zlabel: string, the label of the z axis
         title: string, the title of the plot
 
@@ -198,7 +218,17 @@ class ChemicalSpace:
         plt.savefig(f'{self.dataset_name}.png')
     
     def plot_set_coverages(self, set_sizes:list, cutoff:float, show_legend = True, font_size=15, bins=None, xmin=None)->None:
-        '''Plot histogram of condition set coverages across different condition set sizes'''
+        '''Plot histogram of condition set coverages across different condition set sizes
+        @params:
+        set_sizes: list of integers, the number of conditions in each set
+        cutoff: float, the minimum yield to count as a successful reaction
+        show_legend: bool, whether or not to show the legend
+        font_size: int, the font size of the plot
+        bins: int, the number of bins to use in the histogram
+        xmin: float, the minimum coverage to include in the histogram
+        
+        saves a histogram of the condition set coverages to dataset_name_histogram.png
+        '''
         coverages = []
         plt.rcParams['font.family'] = "sans-serif"
         plt.rcParams['font.sans-serif'] = "Arial"
@@ -217,14 +247,18 @@ class ChemicalSpace:
             coverages = [[n for n in c if n >= xmin] for c in coverages]
         plt.hist(coverages, bins=bins, histtype='bar', label=[f"{size}" for size in set_sizes], stacked=False, log = True, color=['#FF1F5B', '#009ADE', '#AF58BA', '#FFC61E', '#F28522', '#00CD6C'][:len(set_sizes)])
         plt.xlabel('Coverage of Reactant Space (%)', fontsize=font_size)
-        plt.ylabel('Number of Sets', fontsize=font_size)
+        plt.ylabel('Number of Sets of Reaction Conditions', fontsize=font_size)
         plt.tick_params(axis='both', which='major', labelsize=13)
         if show_legend:
-            plt.legend(title='Number of Reaction \nConditions in a Set', loc='center left', bbox_to_anchor=(1, 0.5),  fontsize=11, title_fontsize=13)
+            plt.legend(title='Number of Reaction Conditions in a Set', loc='lower center', bbox_to_anchor=(0.5, -.4),  fontsize=11, title_fontsize=13, ncol=8)
         plt.savefig(f"./datasets/{self.dataset_name}_histogram.png")
         plt.show(block=True)
 
-    def plot_condition_pair_coverages(self, cutoff:float, vmin=None, vmax = None, font_size=15)->None:
+    def plot_condition_pair_coverages(self, cutoff:float)->None:
+        '''
+        Plot of the coverage of all pairs of conditions
+        @params:
+        cutoff: float, the minimum yield to count as a successful reaction'''
         ax1:plt.Axes
         fig, (ax1) = plt.subplots(1, 1, figsize=(5, 5))
         combination_mat = np.zeros((len(self.all_conditions), len(self.all_conditions)))
@@ -238,8 +272,20 @@ class ChemicalSpace:
         ax1.set_ylabel('Ranked Individual Conditions')
         ax1.set_title('Combinations of Individual Conditions')
 
-    def plot_subset_overlap(self, set_size:int, cutoff:float, max_num_sets=None, vmin=100, vmax = 0, font_size = 15, cond_cutoff=None, cov_min=0, cov_max=75)->None:
-        '''Plot of high coverage sets and the individual conditions that make them up'''
+    def plot_condition_set_components(self, set_size:int, cutoff:float, max_num_sets=None, vmin=100, vmax = 0, font_size = 15, cond_cutoff=None, cov_min=0, cov_max=75)->None:
+        '''Plot of high coverage sets and the individual conditions that make them up
+        @params:
+        set_size: int, the size of the condition sets to consider
+        cutoff: float, the minimum yield to count as a successful reaction
+        max_num_sets: int, the maximum number of sets to consider
+        vmin: float, the minimum coverage to include in the plot
+        vmax: float, the maximum coverage to include in the plot
+        font_size: int, the font size of the plot
+        cond_cutoff: int, the number of individual conditions to include on the x axis
+        cov_min: float, the minimum coverage to include in the bar plot
+        cov_max: float, the maximum coverage to include in the bar plot
+        
+        saves a plot of the condition set coverages to dataset_name_set_coverage.png'''
         fig = plt.figure(figsize=(6.5, 8.805))
         gs = fig.add_gridspec(1, 2, width_ratios=[3.6, 1])
 
@@ -250,10 +296,9 @@ class ChemicalSpace:
              max_num_sets = len(self.all_conditions)
 
         individual = self.best_condition_sets(cutoff, 1, None)
-        
+        # ordered_conds, coverage 
         conds_condensed = [cond[0] for cond in individual['set']]
         sets = self.best_condition_sets(cutoff, set_size, max_num_sets)
-        # conditions over the cutoff number of individual conditions on the x axis
         conds_over_ys = []
         conds_over_txt = []
         if cond_cutoff is None:
@@ -264,7 +309,6 @@ class ChemicalSpace:
         converted_sets = np.array([(f(s['set']), s['coverage'], -1*abs(s['size'])) for s in sets],dtype=[('set', 'O'), ('coverage', 'f4'),('size', 'i4')])
         converted_sets.sort(order=['coverage', 'size', 'set'])
         converted_sets = converted_sets[::-1]
-        
         for i, set in enumerate(converted_sets['set']):
             for cond in set:
                 idx = cond*-1
@@ -279,7 +323,7 @@ class ChemicalSpace:
         trim_count = np.trim_zeros(sums, 'b')
         print(np.average(sets['size']))
         combination_mat = combination_mat[:len(trim_count) + 1]
-        cmap = mpl.colormaps.get_cmap('viridis')
+        cmap = mpl.colormaps.get_cmap('viridis')  # viridis is the default colormap for imshow
         cmap.set_bad('white', alpha=1)
         cmap.set_under('lightgray')
         cmap.name = 'vir_bad'
@@ -324,7 +368,6 @@ class ChemicalSpace:
         # create grid lines
         ax1.set_xticks(np.arange(-.5, combination_mat.shape[0], 1), minor=True)
         ax1.set_yticks(np.arange(-.5, combination_mat.shape[1], 1), minor=True)
-
         ax1.tick_params(which='minor', length=0)
         ax2.tick_params(which='minor', length=0)
         ax1.grid(color='lightgray', which='minor', linestyle='-', linewidth=0.5)
@@ -335,10 +378,14 @@ class ChemicalSpace:
             if sets[i]['coverage'] < sets[i-1]['coverage'] or sets[i]['size'] > sets[i-1]['size']:
                 dark_ticks.append(i-.5)
                 ax1.hlines(i-.5, xmin=-.5, xmax=combination_mat.shape[0] - .5, colors='black', linestyles='-', linewidth=.5)
-        plt.savefig("./set_components.png")
+        plt.savefig(f"./datasets/{self.dataset_name}_set_components.png")
         plt.show(block=True)
     
-    def plot_coverage_over_yield(self, coverage_threshold = .6)->None:
+    def plot_coverage_over_yield(self, coverage_threshold:float = .6)->None:
+        '''
+        Plot of coverage vs yield and % of successful reactions vs yield
+        @params:
+        coverage_threshold: float, the coverage threshold to use for the plot'''
         ax1:plt.Axes;ax2:plt.Axes
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
         yields, coverages = self.get_yield_coverage()
